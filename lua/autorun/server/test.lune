@@ -1,0 +1,2 @@
+val fun = () -> print("Lune development environment succesfully loaded")
+fun()
