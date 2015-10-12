@@ -12,6 +12,10 @@ local whiteRaw = S(" \t\r\n") ^ 0
 local whiteSync = whiteRaw * P(update_parser_pos)
 local white = whiteSync
 
+local comment = P("--") * (1 - S("\r\n\f")) ^ 0
+
+local useless = comment^-1 * white
+
 local integer = R("09") ^ 1 / tonumber
 local binOp = S("*+-/") + P("..")
 
@@ -51,7 +55,7 @@ local parser = P {
 	chunk = V("block") * (white ^ -1) * -1,
 	block = Ct(V("stmt") ^ 0),
 
-	stmt = white * (V("ifStmt") + V("returnStmt") + V("varDeclStmt") + V("unpackStmt") + V("assignStmt") + V("blockStmt") + V("expr")),
+	stmt = useless * (V("ifStmt") + V("returnStmt") + V("varDeclStmt") + V("unpackStmt") + V("assignStmt") + V("blockStmt") + V("expr")),
 
 	varDeclStmt = token("varDeclStmt", {"type", "name", "expr"}, C(P("local") + P("var") + P("val")) * white * V("nameExpr") * (white * P("=") * white * V("expr"))^-1),
 	unpackStmt = token("unpackStmt", {"identifiers", "expr"}, P("val") * white * P("{") * white * Ct(V("nameList")) * white * P("}") * white * P("=") * white * V("expr")),
