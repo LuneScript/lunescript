@@ -2,7 +2,16 @@ local lpeg = lunescript.lpeg
 
 local P, R, S, C, Cc, Ct, V = lpeg.P, lpeg.R, lpeg.S, lpeg.C, lpeg.Cc, lpeg.Ct, lpeg.V
 
-local white = S(" \t\r\n") ^ 0
+local parser_state = {}
+local function update_parser_pos(t, pos)
+	parser_state.pos = pos
+	return pos
+end
+
+local whiteRaw = S(" \t\r\n") ^ 0
+local whiteSync = whiteRaw * P(update_parser_pos)
+local white = whiteSync
+
 local integer = R("09") ^ 1 / tonumber
 local binOp = S("*+-/") + P("..")
 
@@ -42,26 +51,51 @@ local parser = P {
 	chunk = V("block") * (white ^ -1) * -1,
 	block = Ct(V("stmt") ^ 0),
 
-	stmt = white * (V("ifStmt") + V("varDeclStmt") + V("assignStmt") + V("expr")),
+	stmt = white * (V("ifStmt") + V("returnStmt") + V("varDeclStmt") + V("unpackStmt") + V("assignStmt") + V("blockStmt") + V("expr")),
+
 	varDeclStmt = token("varDeclStmt", {"type", "name", "expr"}, C(P("local") + P("var") + P("val")) * white * V("nameExpr") * (white * P("=") * white * V("expr"))^-1),
+	unpackStmt = token("unpackStmt", {"identifiers", "expr"}, P("val") * white * P("{") * white * Ct(V("nameList")) * white * P("}") * white * P("=") * white * V("expr")),
+
 	assignStmt = token("assignStmt", {"name", "expr"}, V("nameExpr") * white * P("=") * white * V("expr")),
-	ifStmt = token("ifStmt", {"cond", "block"}, P("if") * white * V("ifCond") * white * P("{") * V("block") * white * P("}")),
+	ifStmt = token("ifStmt", {"cond", "block"}, P("if") * white * V("ifCond") * white * V("blockStmt")),
+	blockStmt = token("blockStmt", {"statements"}, P("{") * V("block") * white * P("}")),
+	returnStmt = token("returnStmt", {"expr"}, P("return") * white * V("expr")),
 
 	expr = (V("value") * (white * C(binOp) * white * V("value"))^-1) / exprMapper,
 	value = token("number", {"value"}, integer) + V("lambdaExpr") + V("callExpr") + V("nameExpr") + V("stringExpr"),
 
-	callExpr = token("callExpr", {"name", "args"}, V("nameExpr") * white * P("(") * white * Ct(V("nameList")) * white * P(")")),
+	callExpr = token("callExpr", {"name", "args"}, V("nameExpr") * white * P("(") * white * Ct(V("argList")) * white * P(")")),
 	nameExpr = token("nameExpr", {"value"}, R("AZ", "az", "09") ^ 1),
 	stringExpr = token("stringExpr", {"value"}, stringp),
 
 	lambdaExpr = token("lambdaExpr", {"params", "body"}, P("(") * white * Ct(V("nameList")) * white * P(")") * white * P("->") * white * V("lambdaBody")),
-	lambdaBody = V("expr") + (P("{") * V("block") * white * P("}")),
+	lambdaBody = V("expr") + V("blockStmt"),
 
 	-- helpers
-	nameList = (white * V("expr") * white * P(",")^-1)^0,
+	nameList = (white * V("nameExpr") * white * P(",")^-1)^0,
+	argList = (white * V("expr") * white * P(",")^-1)^0,
 
 	-- special if condition
 	ifCond = V("varDeclStmt") + V("expr")
 }
 
-lunescript.lpeg_parser = parser
+function lunescript.parse(code)
+	parser_state.pos = 0
+	local t, si, caps = parser:match(code)
+	if t then return t end
+
+	local endpos = parser_state.pos or 0
+
+	local row, col = 0, 0
+
+	local nlChar = string.byte("\n")
+	for i=1, endpos do
+		col = col+1
+		if string.byte(code, i) == nlChar then
+			row = row+1
+			col = 0
+		end
+	end
+
+	return false, "Syntax error on line " .. row .. " col " .. col
+end
