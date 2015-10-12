@@ -28,12 +28,12 @@ function lunescript.to_lua(ast)
 			for k,v in pairs(n.params or {}) do mappedArgs[k] = expr(v) end
 
 			local code
-			if n.body.id then
+			if n.body.id ~= "blockStmt" then
 				-- single expr
 				code = "return " .. expr(n.body)
 			else
 				local codet = {}
-				block(n.body, function(t) table.insert(codet, t) end, function() end)
+				block(n.body.statements, function(t) table.insert(codet, t) end, function() end)
 				code = table.concat(codet, " ")
 			end
 
@@ -41,7 +41,7 @@ function lunescript.to_lua(ast)
 		elseif n.id == "binOpExpr" then
 			return string.format("%s %s %s", expr(n.left), n.op, expr(n.right))
 		end
-		return "- '" .. n.id .. "'not implemented-"
+		return "['" .. n.id .. "'not implemented]"
 	end
 
 	function stmt(n, _push, _ind)
@@ -49,6 +49,15 @@ function lunescript.to_lua(ast)
 
 		if n.id == "varDeclStmt" then
 			push("%s %s = %s", "local", expr(n.name), expr(n.expr))
+		elseif n.id == "returnStmt" then
+			push("return %s", expr(n.expr))
+		elseif n.id == "unpackStmt" then
+			local var = "_tmp_unpack_" .. math.random(1000, 9999)
+			push("local %s = %s", var, expr(n.expr))
+
+			local mappedIds, mappedGetters = {}, {}
+			for k,v in pairs(n.identifiers) do mappedIds[k] = v.value mappedGetters[k] = var .. "." .. v.value end
+			push("local %s = %s", table.concat(mappedIds, ", "), table.concat(mappedGetters, ", "))
 		elseif n.id == "assignStmt" then
 			push("%s = %s", expr(n.name), expr(n.expr))
 		elseif n.id == "ifStmt" then
@@ -72,6 +81,8 @@ function lunescript.to_lua(ast)
 
 			block(n.block)
 			ind(-1) push("end")
+		elseif n.id == "blockStmt" then
+			block(n.statements, _push, _ind)
 		else
 			push(expr(n))
 		end
